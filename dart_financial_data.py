@@ -6,6 +6,10 @@ DART(전자공시) Open API로 회사별 연도별 매출액/유형자산/직원
     python3 dart_financial_data.py
 
 대상 회사/연도는 아래 COMPANIES / YEARS 상수에서 바꿀 수 있다.
+
+디버깅용으로 DART_DEBUG=1 을 함께 설정하면, 각 회사/연도별 원본 API 응답을
+debug_raw/ 폴더에 JSON으로 저장한다. 수치가 이상하게 나올 때 이 파일을 보면
+정확한 원인을 확인할 수 있다.
 """
 
 import io
@@ -27,8 +31,11 @@ CORP_CODE_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "corp
 COMPANIES = ["삼성SDI", "SK이노베이션", "DB하이텍"]
 YEARS = list(range(2018, 2026))
 REPORT_CODE = "11011"  # 사업보고서(연간)
-REVENUE_ACCOUNT_NAMES = {"매출액", "수익(매출액)"}
+REVENUE_ACCOUNT_NAMES = {"매출액", "수익(매출액)", "영업수익"}
 TANGIBLE_ASSET_ACCOUNT_NAMES = {"유형자산"}
+TOTAL_ROW_MARKERS = {"합계", "계", "합 계", "총계"}
+DEBUG_DUMP = os.environ.get("DART_DEBUG") == "1"
+DEBUG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug_raw")
 
 
 def load_corp_code_xml():
@@ -67,8 +74,19 @@ def to_int(amount_str):
         return None
 
 
-def fetch_financials(corp_code, year):
-    """해당 연도 매출액/유형자산을 (연결 우선, 없으면 개별) 가져온다."""
+def dump_debug(name, year, endpoint, payload):
+    if not DEBUG_DUMP:
+        return
+    os.makedirs(DEBUG_DIR, exist_ok=True)
+    path = os.path.join(DEBUG_DIR, f"{name}_{year}_{endpoint}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        import json
+
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def fetch_financials(corp_code, year, name=None):
+    """해당 연도 매출액(손익/포괄손익계산서)과 유형자산(재무상태표)을 (연결 우선, 없으면 개별) 가져온다."""
     for fs_div in ("CFS", "OFS"):
         params = {
             "crtfc_key": API_KEY,
@@ -78,23 +96,30 @@ def fetch_financials(corp_code, year):
             "fs_div": fs_div,
         }
         res = requests.get(f"{BASE_URL}/fnlttSinglAcntAll.json", params=params, timeout=30).json()
+        dump_debug(name, year, f"fs_{fs_div}", res)
         if res.get("status") != "000":
             continue
 
         revenue = tangible_assets = None
         for item in res["list"]:
             account_nm = item.get("account_nm", "").strip()
-            if account_nm in REVENUE_ACCOUNT_NAMES and revenue is None:
+            sj_div = item.get("sj_div", "").strip()  # BS=재무상태표, IS/CIS=손익/포괄손익계산서
+            if sj_div in ("IS", "CIS") and account_nm in REVENUE_ACCOUNT_NAMES and revenue is None:
                 revenue = to_int(item.get("thstrm_amount"))
-            elif account_nm in TANGIBLE_ASSET_ACCOUNT_NAMES and tangible_assets is None:
+            elif sj_div == "BS" and account_nm in TANGIBLE_ASSET_ACCOUNT_NAMES and tangible_assets is None:
                 tangible_assets = to_int(item.get("thstrm_amount"))
         if revenue is not None or tangible_assets is not None:
             return revenue, tangible_assets, fs_div
     return None, None, None
 
 
-def fetch_employee_count(corp_code, year):
-    """사업보고서 '직원 현황'의 인원수 합계를 모두 더해 총 직원수를 구한다."""
+def fetch_employee_count(corp_code, year, name=None):
+    """사업보고서 '임원 및 직원 현황 > 직원 현황'의 총 인원수를 구한다.
+
+    회사에 따라 사업부문별 세부 행과 별도의 '합계' 행이 함께 내려오는 경우가 있어,
+    모든 행을 무조건 합치면 이중 집계된다. 합계 행이 있으면 그 값만 쓰고,
+    없으면 세부 행을 모두 더한다.
+    """
     params = {
         "crtfc_key": API_KEY,
         "corp_code": corp_code,
@@ -102,17 +127,30 @@ def fetch_employee_count(corp_code, year):
         "reprt_code": REPORT_CODE,
     }
     res = requests.get(f"{BASE_URL}/empSttus.json", params=params, timeout=30).json()
+    dump_debug(name, year, "emp", res)
     if res.get("status") != "000":
         return None
 
-    total = 0
-    found = False
+    detail_rows = []
+    total_rows = []
     for item in res["list"]:
         count = to_int(item.get("sm"))
-        if count is not None:
-            total += count
-            found = True
-    return total if found else None
+        if count is None:
+            continue
+        fo_bbm = (item.get("fo_bbm") or "").strip()
+        if fo_bbm in TOTAL_ROW_MARKERS:
+            total_rows.append((item.get("sexdstn", "").strip(), count))
+        else:
+            detail_rows.append(count)
+
+    if total_rows:
+        # 성별별 합계 행(남/여)이 각각 있으면 더하고, 전체 합계 행 하나뿐이면 그 값을 쓴다.
+        sex_values = {sex for sex, _ in total_rows}
+        if sex_values <= {"남", "여"}:
+            return sum(c for _, c in total_rows)
+        return total_rows[-1][1]
+
+    return sum(detail_rows) if detail_rows else None
 
 
 def main():
@@ -124,9 +162,9 @@ def main():
     for name in COMPANIES:
         corp_code = corp_codes[name]
         for year in YEARS:
-            revenue, tangible_assets, fs_div = fetch_financials(corp_code, year)
+            revenue, tangible_assets, fs_div = fetch_financials(corp_code, year, name=name)
             time.sleep(0.2)
-            employees = fetch_employee_count(corp_code, year)
+            employees = fetch_employee_count(corp_code, year, name=name)
             time.sleep(0.2)
             rows.append(
                 {
