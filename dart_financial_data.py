@@ -96,33 +96,33 @@ def dump_debug(name, year, endpoint, payload):
 
 
 def fetch_financials(corp_code, year, name=None):
-    """해당 연도 매출액(손익/포괄손익계산서)과 유형자산(재무상태표)을 (연결 우선, 없으면 개별) 가져온다."""
-    # 사업보고서 본문의 "4. 재무제표"(개별/별도)를 기준으로 삼는다.
-    # 앞쪽 "연결재무제표"와 다른 표이므로 OFS를 먼저 시도한다.
-    for fs_div in ("OFS", "CFS"):
-        params = {
-            "crtfc_key": API_KEY,
-            "corp_code": corp_code,
-            "bsns_year": str(year),
-            "reprt_code": REPORT_CODE,
-            "fs_div": fs_div,
-        }
-        res = requests.get(f"{BASE_URL}/fnlttSinglAcntAll.json", params=params, timeout=30).json()
-        dump_debug(name, year, f"fs_{fs_div}", res)
-        if res.get("status") != "000":
-            continue
+    """해당 연도 매출액(손익/포괄손익계산서)과 유형자산(재무상태표)을 개별(별도) 재무제표에서 가져온다.
 
-        revenue = tangible_assets = None
-        for item in res["list"]:
-            account_nm = item.get("account_nm", "").strip()
-            sj_div = item.get("sj_div", "").strip()  # BS=재무상태표, IS/CIS=손익/포괄손익계산서
-            if sj_div in ("IS", "CIS") and account_nm in REVENUE_ACCOUNT_NAMES and revenue is None:
-                revenue = to_int(item.get("thstrm_amount"))
-            elif sj_div == "BS" and account_nm in TANGIBLE_ASSET_ACCOUNT_NAMES and tangible_assets is None:
-                tangible_assets = to_int(item.get("thstrm_amount"))
-        if revenue is not None or tangible_assets is not None:
-            return revenue, tangible_assets, fs_div
-    return None, None, None
+    사업보고서 본문의 "4. 재무제표"(개별/별도)만 사용한다. 연결재무제표(CFS)는
+    보지 않는다 — 개별 재무제표가 그 해에 없으면 연결로 대체하지 않고 빈 값을 낸다.
+    """
+    fs_div = "OFS"
+    params = {
+        "crtfc_key": API_KEY,
+        "corp_code": corp_code,
+        "bsns_year": str(year),
+        "reprt_code": REPORT_CODE,
+        "fs_div": fs_div,
+    }
+    res = requests.get(f"{BASE_URL}/fnlttSinglAcntAll.json", params=params, timeout=30).json()
+    dump_debug(name, year, f"fs_{fs_div}", res)
+    if res.get("status") != "000":
+        return None, None, None
+
+    revenue = tangible_assets = None
+    for item in res["list"]:
+        account_nm = item.get("account_nm", "").strip()
+        sj_div = item.get("sj_div", "").strip()  # BS=재무상태표, IS/CIS=손익/포괄손익계산서
+        if sj_div in ("IS", "CIS") and account_nm in REVENUE_ACCOUNT_NAMES and revenue is None:
+            revenue = to_int(item.get("thstrm_amount"))
+        elif sj_div == "BS" and account_nm in TANGIBLE_ASSET_ACCOUNT_NAMES and tangible_assets is None:
+            tangible_assets = to_int(item.get("thstrm_amount"))
+    return revenue, tangible_assets, fs_div
 
 
 def fetch_employee_count(corp_code, year, name=None):
