@@ -10,6 +10,10 @@ DART(전자공시) Open API로 회사별 연도별 매출액/유형자산/직원
 디버깅용으로 DART_DEBUG=1 을 함께 설정하면, 각 회사/연도별 원본 API 응답을
 debug_raw/ 폴더에 JSON으로 저장한다. 수치가 이상하게 나올 때 이 파일을 보면
 정확한 원인을 확인할 수 있다.
+
+로직이 아직 확정되지 않은 동안에는 결과를 콘솔에만 출력하고, corpCode.xml
+캐시 파일이나 엑셀 파일을 디스크에 자동으로 저장하지 않는다.
+검증이 끝나서 파일로 저장하고 싶으면 DART_SAVE_FILES=1 을 설정한다.
 """
 
 import io
@@ -36,11 +40,16 @@ TANGIBLE_ASSET_ACCOUNT_NAMES = {"유형자산"}
 TOTAL_ROW_MARKERS = {"합계", "계", "합 계", "총계"}
 DEBUG_DUMP = os.environ.get("DART_DEBUG") == "1"
 DEBUG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug_raw")
+SAVE_FILES = os.environ.get("DART_SAVE_FILES") == "1"
 
 
 def load_corp_code_xml():
-    """DART 전체 회사 고유번호 매핑 파일을 받아 로컬에 캐시한다."""
-    if os.path.exists(CORP_CODE_CACHE):
+    """DART 전체 회사 고유번호 매핑 파일을 받아온다.
+
+    DART_SAVE_FILES=1 일 때만 corpCode.xml로 캐시해서 다음 실행 때 재사용한다.
+    그 전에는 매번 새로 받아서 메모리에서만 쓰고 디스크에 남기지 않는다.
+    """
+    if SAVE_FILES and os.path.exists(CORP_CODE_CACHE):
         with open(CORP_CODE_CACHE, encoding="utf-8") as f:
             return f.read()
 
@@ -49,8 +58,9 @@ def load_corp_code_xml():
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
         xml_bytes = zf.read(zf.namelist()[0])
     xml_text = xml_bytes.decode("utf-8")
-    with open(CORP_CODE_CACHE, "w", encoding="utf-8") as f:
-        f.write(xml_text)
+    if SAVE_FILES:
+        with open(CORP_CODE_CACHE, "w", encoding="utf-8") as f:
+            f.write(xml_text)
     return xml_text
 
 
@@ -176,13 +186,11 @@ def main():
             )
             print(rows[-1])
 
-    try:
-        from openpyxl import Workbook
-    except ImportError:
-        sys.exit(
-            "openpyxl이 설치되어 있지 않습니다. `pip install openpyxl` 후 다시 실행하면 엑셀로 저장됩니다."
-            " (지금까지 수집한 값은 위 콘솔 출력을 참고하세요.)"
-        )
+    if not SAVE_FILES:
+        print("\n(엑셀 파일은 저장하지 않았습니다. 저장하려면 DART_SAVE_FILES=1로 다시 실행하세요.)")
+        return
+
+    from openpyxl import Workbook
 
     wb = Workbook()
     ws = wb.active
