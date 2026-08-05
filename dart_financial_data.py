@@ -87,7 +87,9 @@ def dump_debug(name, year, endpoint, payload):
 
 def fetch_financials(corp_code, year, name=None):
     """해당 연도 매출액(손익/포괄손익계산서)과 유형자산(재무상태표)을 (연결 우선, 없으면 개별) 가져온다."""
-    for fs_div in ("CFS", "OFS"):
+    # 사업보고서 본문의 "4. 재무제표"(개별/별도)를 기준으로 삼는다.
+    # 앞쪽 "연결재무제표"와 다른 표이므로 OFS를 먼저 시도한다.
+    for fs_div in ("OFS", "CFS"):
         params = {
             "crtfc_key": API_KEY,
             "corp_code": corp_code,
