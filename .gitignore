@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+corpCode.xml
+dart_financial_data.xlsx
