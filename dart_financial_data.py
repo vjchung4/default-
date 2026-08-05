@@ -31,7 +31,7 @@ CORP_CODE_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "corp
 COMPANIES = ["삼성SDI", "SK이노베이션", "DB하이텍"]
 YEARS = list(range(2018, 2026))
 REPORT_CODE = "11011"  # 사업보고서(연간)
-REVENUE_ACCOUNT_NAMES = {"매출액", "수익(매출액)", "영업수익"}
+REVENUE_ACCOUNT_NAMES = {"매출액", "수익(매출액)"}
 TANGIBLE_ASSET_ACCOUNT_NAMES = {"유형자산"}
 TOTAL_ROW_MARKERS = {"합계", "계", "합 계", "총계"}
 DEBUG_DUMP = os.environ.get("DART_DEBUG") == "1"
