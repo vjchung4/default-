@@ -116,9 +116,9 @@ def fetch_financials(corp_code, year, name=None):
 def fetch_employee_count(corp_code, year, name=None):
     """사업보고서 '임원 및 직원 현황 > 직원 현황'의 총 인원수를 구한다.
 
-    회사에 따라 사업부문별 세부 행과 별도의 '합계' 행이 함께 내려오는 경우가 있어,
-    모든 행을 무조건 합치면 이중 집계된다. 합계 행이 있으면 그 값만 쓰고,
-    없으면 세부 행을 모두 더한다.
+    사업부문별 세부 행과 별도로, 사업부문(fo_bbm)이 '합계'류인 행에 이미
+    전체 인원수가 적혀 있으므로 세부 행은 무시하고 합계 행만 사용한다.
+    성별(남/여)로 나뉜 합계 행이 각각 있으면 둘을 더해서 전체 인원수를 낸다.
     """
     params = {
         "crtfc_key": API_KEY,
@@ -131,26 +131,22 @@ def fetch_employee_count(corp_code, year, name=None):
     if res.get("status") != "000":
         return None
 
-    detail_rows = []
     total_rows = []
     for item in res["list"]:
-        count = to_int(item.get("sm"))
-        if count is None:
-            continue
         fo_bbm = (item.get("fo_bbm") or "").strip()
-        if fo_bbm in TOTAL_ROW_MARKERS:
+        if fo_bbm not in TOTAL_ROW_MARKERS:
+            continue
+        count = to_int(item.get("sm"))
+        if count is not None:
             total_rows.append((item.get("sexdstn", "").strip(), count))
-        else:
-            detail_rows.append(count)
 
-    if total_rows:
-        # 성별별 합계 행(남/여)이 각각 있으면 더하고, 전체 합계 행 하나뿐이면 그 값을 쓴다.
-        sex_values = {sex for sex, _ in total_rows}
-        if sex_values <= {"남", "여"}:
-            return sum(c for _, c in total_rows)
-        return total_rows[-1][1]
+    if not total_rows:
+        return None
 
-    return sum(detail_rows) if detail_rows else None
+    sex_values = {sex for sex, _ in total_rows}
+    if sex_values <= {"남", "여"}:
+        return sum(c for _, c in total_rows)
+    return total_rows[-1][1]
 
 
 def main():
