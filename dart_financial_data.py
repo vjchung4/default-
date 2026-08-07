@@ -37,7 +37,7 @@ YEARS = list(range(2018, 2026))
 REPORT_CODE = "11011"  # 사업보고서(연간)
 REVENUE_ACCOUNT_NAMES = {"매출액", "수익(매출액)"}
 TANGIBLE_ASSET_ACCOUNT_NAMES = {"유형자산"}
-TOTAL_ROW_MARKERS = {"합계", "계", "합 계", "총계"}
+TOTAL_ROW_MARKERS = {"합계", "계", "총계"}
 DEBUG_DUMP = os.environ.get("DART_DEBUG") == "1"
 DEBUG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug_raw")
 SAVE_FILES = os.environ.get("DART_SAVE_FILES") == "1"
@@ -145,7 +145,7 @@ def fetch_employee_count(corp_code, year, name=None):
 
     total_rows = []
     for item in res["list"]:
-        fo_bbm = (item.get("fo_bbm") or "").strip()
+        fo_bbm = re.sub(r"\s+", "", item.get("fo_bbm") or "")
         if fo_bbm not in TOTAL_ROW_MARKERS:
             continue
         count = to_int(item.get("sm"))
