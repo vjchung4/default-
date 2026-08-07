@@ -1,13 +1,15 @@
 """
 기존 엑셀 파일(종목코드/기업명/연도/매출액/유형자산/연구개발비/직원수/산업 형식)에서
-비어 있는 매출액/유형자산/직원수 칸만 DART Open API로 채워 넣는다.
+매출액/유형자산/직원수 칸을 DART Open API로 채워 넣는다.
 
-이미 값이 채워진 칸은 절대 건드리지 않는다. 연구개발비/산업/종목코드는
-이 스크립트가 다루지 않는다.
+기본은 비어 있는 칸만 채우고, 이미 값이 있는 칸은 건드리지 않는다.
+--force 를 주면 이미 값이 있어도 API로 다시 받아서 덮어쓴다("N/A"라고 적힌,
+그 해에 회사가 아직 없었다는 표시는 --force 에서도 건드리지 않는다).
+연구개발비/산업/종목코드는 이 스크립트가 다루지 않는다.
 
 사용법:
     set DART_API_KEY=발급받은키
-    python fill_excel.py 입력파일.xlsx [출력파일.xlsx]
+    python fill_excel.py 입력파일.xlsx [출력파일.xlsx] [--force]
 
 출력파일을 생략하면 "입력파일_filled.xlsx" 로 저장한다 (원본은 건드리지 않음).
 """
@@ -39,10 +41,14 @@ COL_INDUSTRY = 8
 
 
 def main():
-    if len(sys.argv) < 2:
-        sys.exit("사용법: python fill_excel.py 입력파일.xlsx [출력파일.xlsx]")
-    in_path = sys.argv[1]
-    out_path = sys.argv[2] if len(sys.argv) > 2 else in_path.rsplit(".", 1)[0] + "_filled.xlsx"
+    args = sys.argv[1:]
+    force = "--force" in args
+    args = [a for a in args if a != "--force"]
+
+    if not args:
+        sys.exit("사용법: python fill_excel.py 입력파일.xlsx [출력파일.xlsx] [--force]")
+    in_path = args[0]
+    out_path = args[1] if len(args) > 1 else in_path.rsplit(".", 1)[0] + "_filled.xlsx"
 
     wb = load_workbook(in_path)
     ws = wb.active
@@ -69,14 +75,19 @@ def main():
 
     financials_cache = {}
 
-    # "N/A"는 그 해에 회사가 존재하지 않았다는 의도적인 표시이므로 빈 칸으로 취급하지 않는다.
-    EMPTY_MARKERS = (None, "")
+    # "N/A"는 그 해에 회사가 존재하지 않았다는 의도적인 표시이므로 --force 에서도 건드리지 않는다.
+    def needs(value):
+        if value == "N/A":
+            return False
+        if force:
+            return True
+        return value in (None, "")
 
     filled = 0
     for r, name, year in rows:
-        need_revenue = ws.cell(r, COL_REVENUE).value in EMPTY_MARKERS
-        need_tangible = ws.cell(r, COL_TANGIBLE).value in EMPTY_MARKERS
-        need_employees = ws.cell(r, COL_EMPLOYEES).value in EMPTY_MARKERS
+        need_revenue = needs(ws.cell(r, COL_REVENUE).value)
+        need_tangible = needs(ws.cell(r, COL_TANGIBLE).value)
+        need_employees = needs(ws.cell(r, COL_EMPLOYEES).value)
 
         if not (need_revenue or need_tangible or need_employees):
             continue
