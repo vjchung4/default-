@@ -24,7 +24,9 @@ from dart_financial_data import (
 )
 
 # 시트에 등장하는 기업명이 DART 공식 회사명과 다르면 여기에 매핑을 추가한다.
-NAME_ALIASES = {}
+NAME_ALIASES = {
+    "두산퓨어셀": "두산퓨얼셀",  # 정식 사명은 "두산퓨얼셀"
+}
 
 COL_CORP_CODE = 1
 COL_NAME = 2
@@ -67,11 +69,14 @@ def main():
 
     financials_cache = {}
 
+    # "N/A"는 그 해에 회사가 존재하지 않았다는 의도적인 표시이므로 빈 칸으로 취급하지 않는다.
+    EMPTY_MARKERS = (None, "")
+
     filled = 0
     for r, name, year in rows:
-        need_revenue = ws.cell(r, COL_REVENUE).value in (None, "", "N/A")
-        need_tangible = ws.cell(r, COL_TANGIBLE).value in (None, "", "N/A")
-        need_employees = ws.cell(r, COL_EMPLOYEES).value in (None, "", "N/A")
+        need_revenue = ws.cell(r, COL_REVENUE).value in EMPTY_MARKERS
+        need_tangible = ws.cell(r, COL_TANGIBLE).value in EMPTY_MARKERS
+        need_employees = ws.cell(r, COL_EMPLOYEES).value in EMPTY_MARKERS
 
         if not (need_revenue or need_tangible or need_employees):
             continue
@@ -82,6 +87,8 @@ def main():
             print(f"[건너뜀] {name} {year}: {e}")
             continue
 
+        row_filled = 0
+
         if need_revenue or need_tangible:
             key = (corp_code, year)
             if key not in financials_cache:
@@ -89,18 +96,22 @@ def main():
             revenue, tangible, fs_div = financials_cache[key]
             if need_revenue and revenue is not None:
                 ws.cell(r, COL_REVENUE).value = revenue
-                filled += 1
+                row_filled += 1
             if need_tangible and tangible is not None:
                 ws.cell(r, COL_TANGIBLE).value = tangible
-                filled += 1
+                row_filled += 1
 
         if need_employees:
             employees = fetch_employee_count(corp_code, year, name=name)
             if employees is not None:
                 ws.cell(r, COL_EMPLOYEES).value = employees
-                filled += 1
+                row_filled += 1
 
-        print(f"{name} {year} 처리 완료")
+        if row_filled:
+            print(f"{name} {year} 처리 완료 ({row_filled}칸)")
+        else:
+            print(f"[값 없음] {name} {year}: DART에 해당 연도 데이터가 없어 그대로 둠")
+        filled += row_filled
 
     wb.save(out_path)
     print(f"\n{filled}개 칸을 채웠습니다. 저장 위치: {out_path}")
