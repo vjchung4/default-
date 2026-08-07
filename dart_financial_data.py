@@ -37,7 +37,6 @@ YEARS = list(range(2018, 2026))
 REPORT_CODE = "11011"  # 사업보고서(연간)
 REVENUE_ACCOUNT_NAMES = {"매출액", "수익(매출액)"}
 TANGIBLE_ASSET_ACCOUNT_NAMES = {"유형자산"}
-TOTAL_ROW_MARKERS = {"합계", "계", "총계"}
 DEBUG_DUMP = os.environ.get("DART_DEBUG") == "1"
 DEBUG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug_raw")
 SAVE_FILES = os.environ.get("DART_SAVE_FILES") == "1"
@@ -128,9 +127,10 @@ def fetch_financials(corp_code, year, name=None):
 def fetch_employee_count(corp_code, year, name=None):
     """사업보고서 '임원 및 직원 현황 > 직원 현황'의 총 인원수를 구한다.
 
-    사업부문별 세부 행과 별도로, 사업부문(fo_bbm)이 '합계'류인 행에 이미
-    전체 인원수가 적혀 있으므로 세부 행은 무시하고 합계 행만 사용한다.
-    성별(남/여)로 나뉜 합계 행이 각각 있으면 둘을 더해서 전체 인원수를 낸다.
+    DART API는 사업부문/성별별 세부 행만 내려주고, 화면에 보이는 "합 계" 행은
+    DART 웹뷰어가 화면 표시용으로 계산해서 보여주는 것일 뿐 API 응답에는
+    별도로 포함되지 않는다. 따라서 모든 세부 행의 '합계' 열(sm)을 그대로
+    더하면 된다.
     """
     params = {
         "crtfc_key": API_KEY,
@@ -141,24 +141,21 @@ def fetch_employee_count(corp_code, year, name=None):
     res = requests.get(f"{BASE_URL}/empSttus.json", params=params, timeout=30).json()
     dump_debug(name, year, "emp", res)
     if res.get("status") != "000":
+        print(f"  [직원현황 조회 실패] {name} {year}: status={res.get('status')} message={res.get('message')}")
         return None
 
-    total_rows = []
+    total = 0
+    found = False
     for item in res["list"]:
-        fo_bbm = re.sub(r"\s+", "", item.get("fo_bbm") or "")
-        if fo_bbm not in TOTAL_ROW_MARKERS:
-            continue
         count = to_int(item.get("sm"))
         if count is not None:
-            total_rows.append((item.get("sexdstn", "").strip(), count))
+            total += count
+            found = True
 
-    if not total_rows:
+    if not found:
+        print(f"  [직원수 못 찾음] {name} {year}: 응답={res['list']}")
         return None
-
-    sex_values = {sex for sex, _ in total_rows}
-    if sex_values <= {"남", "여"}:
-        return sum(c for _, c in total_rows)
-    return total_rows[-1][1]
+    return total
 
 
 def main():
