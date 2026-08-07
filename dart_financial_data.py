@@ -32,7 +32,28 @@ if not API_KEY:
 BASE_URL = "https://opendart.fss.or.kr/api"
 CORP_CODE_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "corpCode.xml")
 
-COMPANIES = ["삼성SDI", "SK이노베이션", "DB하이텍"]
+COMPANIES = [
+    "삼성SDI",
+    "SK이노베이션",
+    "DB하이텍",
+    "포스코퓨처엠",
+    "한화솔루션",
+    "이엔에프테크놀로지",
+    "한미반도체",
+    "원익IPS",
+    "주성엔지니어링",
+    "이오테크닉스",
+    "에코프로비엠",
+    "엘앤에프",
+    "덕산네오룩스",
+    "원익QnC",
+    "리노공업",
+    "두산에너빌리티",
+    "현대자동차",
+    "한화에어로스페이스",
+    "두산퓨어셀",
+    "안랩",
+]
 YEARS = list(range(2018, 2026))
 REPORT_CODE = "11011"  # 사업보고서(연간)
 REVENUE_ACCOUNT_NAMES = {"매출액", "수익(매출액)"}
