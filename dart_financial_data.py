@@ -86,8 +86,12 @@ def load_corp_code_xml():
 
 def find_corp_code(xml_text, corp_name):
     """상장사(stock_code가 공백이 아닌 것) 중 이름이 정확히 일치하는 회사의 고유번호를 찾는다."""
+    import html
+
     for block in re.findall(r"<list>(.*?)</list>", xml_text, re.S):
-        name = re.search(r"<corp_name>(.*?)</corp_name>", block).group(1).strip()
+        # XML에서는 "&"가 "&amp;"로 이스케이프되어 있으므로 비교 전에 풀어준다
+        # (예: "동원F&B", "F&F"처럼 이름에 &가 들어간 회사).
+        name = html.unescape(re.search(r"<corp_name>(.*?)</corp_name>", block).group(1)).strip()
         stock_code = re.search(r"<stock_code>(.*?)</stock_code>", block).group(1).strip()
         if name == corp_name and stock_code:
             corp_code = re.search(r"<corp_code>(.*?)</corp_code>", block).group(1).strip()
