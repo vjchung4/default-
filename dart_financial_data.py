@@ -145,6 +145,111 @@ def fetch_financials(corp_code, year, name=None):
     return revenue, tangible_assets, fs_div
 
 
+def find_business_report_rcept_no(corp_code, year, name=None):
+    """해당 사업연도의 사업보고서 접수번호(rcept_no)를 list.json으로 찾는다.
+
+    사업보고서는 보통 다음 해 3월에 제출되지만 정정 등으로 늦게 올라올 수도
+    있어 다음 해 전체를 조회 범위로 잡는다. 여러 건이 잡히면 report_nm에
+    해당 연도(12월 결산)가 명시된 것을 우선하고, 없으면 가장 최근 것을 쓴다.
+    """
+    params = {
+        "crtfc_key": API_KEY,
+        "corp_code": corp_code,
+        "bgn_de": f"{year + 1}0101",
+        "end_de": f"{year + 1}1231",
+        "pblntf_detail_ty": "A001",  # 사업보고서
+        "page_count": 100,
+    }
+    res = requests.get(f"{BASE_URL}/list.json", params=params, timeout=30).json()
+    dump_debug(name, year, "report_list", res)
+    if res.get("status") != "000":
+        return None
+
+    candidates = [item for item in res.get("list", []) if item.get("report_nm", "").startswith("사업보고서")]
+    if not candidates:
+        return None
+
+    exact = [c for c in candidates if f"{year}.12" in c.get("report_nm", "")]
+    pool = exact or candidates
+    pool.sort(key=lambda c: c.get("rcept_no", ""), reverse=True)
+    return pool[0]["rcept_no"]
+
+
+def fetch_report_document_text(rcept_no, name=None, year=None):
+    """사업보고서 원본 문서(document.xml, zip)를 받아 태그를 제거한 순수 텍스트로 반환한다."""
+    params = {"crtfc_key": API_KEY, "rcept_no": rcept_no}
+    resp = requests.get(f"{BASE_URL}/document.xml", params=params, timeout=60)
+    resp.raise_for_status()
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        raw = zf.read(zf.namelist()[0])
+    for encoding in ("utf-8", "cp949"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        text = raw.decode("utf-8", errors="ignore")
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"&nbsp;?", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    if DEBUG_DUMP and name and year:
+        os.makedirs(DEBUG_DIR, exist_ok=True)
+        idx = text.find("연구개발비용")
+        snippet = text[max(0, idx - 200):idx + 1000] if idx != -1 else "(연구개발비용 문구를 찾지 못함)"
+        with open(os.path.join(DEBUG_DIR, f"{name}_{year}_rnd_snippet.txt"), "w", encoding="utf-8") as f:
+            f.write(snippet)
+    return text
+
+
+def fetch_rnd_expense(corp_code, year, name=None):
+    """사업보고서 "주요계약 및 연구개발활동"(또는 "연구개발활동") 표에서
+    "연구개발비용 계" 행의 당기 금액을 읽어온다.
+
+    "사업의 내용" 하위 항목으로 들어있는 경우와, 독립된 장으로 분리되어 있는
+    경우를 모두 찾는다. 표를 찾지 못하거나 금액을 확실히 특정할 수 없으면
+    None을 반환해 해당 칸을 비워 둔다 (억지로 채우지 않는다).
+    """
+    try:
+        rcept_no = find_business_report_rcept_no(corp_code, year, name=name)
+        if not rcept_no:
+            return None
+        text = fetch_report_document_text(rcept_no, name=name, year=year)
+    except Exception as e:
+        print(f"  [연구개발비 문서 조회 실패] {name} {year}: {e}")
+        return None
+
+    # "사업의 내용"의 하위 항목("6. 주요계약 및 연구개발활동")이든, 독립된
+    # 장("주요계약 및 연구개발활동")이든 상관없이 "연구개발비용 계" 행 자체를
+    # 직접 찾는다 — 이 라벨은 목차 등에는 나오지 않는 실제 표의 행 이름이라
+    # 어느 위치에 있든 이 방식이면 잡힌다.
+    row_match = re.search(r"연구개발비용?\s*계([^가-힣]{0,200})", text)
+    if not row_match:
+        return None
+
+    numbers = re.findall(r"-?[0-9][0-9,]*(?:\.[0-9]+)?", row_match.group(1))
+    if not numbers:
+        return None
+
+    amount_str = numbers[0].replace(",", "")
+    try:
+        amount = float(amount_str) if "." in amount_str else int(amount_str)
+    except ValueError:
+        return None
+
+    unit_search_start = max(0, row_match.start() - 3000)
+    unit_window = text[unit_search_start:row_match.start()]
+    unit_match = None
+    for m in re.finditer(r"단위\s*[:：]\s*(백만원|천원|원)", unit_window):
+        unit_match = m
+    if unit_match is None:
+        # 단위 표시를 못 찾으면 잘못 스케일링할 위험이 있으므로 채우지 않는다.
+        return None
+
+    scale = {"원": 1, "천원": 1_000, "백만원": 1_000_000}[unit_match.group(1)]
+    return int(amount * scale)
+
+
 def fetch_employee_count(corp_code, year, name=None):
     """사업보고서 '임원 및 직원 현황 > 직원 현황'의 총 인원수를 구한다.
 

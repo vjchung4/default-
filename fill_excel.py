@@ -1,11 +1,14 @@
 """
 기존 엑셀 파일(종목코드/기업명/연도/매출액/유형자산/연구개발비/직원수/산업 형식)에서
-매출액/유형자산/직원수 칸을 DART Open API로 채워 넣는다.
+매출액/유형자산/연구개발비/직원수 칸을 DART Open API로 채워 넣는다.
 
 기본은 비어 있는 칸만 채우고, 이미 값이 있는 칸은 건드리지 않는다.
 --force 를 주면 이미 값이 있어도 API로 다시 받아서 덮어쓴다("N/A"라고 적힌,
 그 해에 회사가 아직 없었다는 표시는 --force 에서도 건드리지 않는다).
-연구개발비/산업/종목코드는 이 스크립트가 다루지 않는다.
+
+연구개발비는 사업보고서 본문에서 "연구개발비용 계" 행을 직접 찾아서 읽는
+방식이라(정형 API가 없음) 문서 포맷에 따라 못 찾을 수 있다 — 못 찾으면
+그 칸은 그냥 비워 둔다. 산업/종목코드는 이 스크립트가 다루지 않는다.
 
 사용법:
     set DART_API_KEY=발급받은키
@@ -21,6 +24,7 @@ from openpyxl import load_workbook
 from dart_financial_data import (
     fetch_employee_count,
     fetch_financials,
+    fetch_rnd_expense,
     find_corp_code,
     load_corp_code_xml,
 )
@@ -87,9 +91,10 @@ def main():
     for r, name, year in rows:
         need_revenue = needs(ws.cell(r, COL_REVENUE).value)
         need_tangible = needs(ws.cell(r, COL_TANGIBLE).value)
+        need_rnd = needs(ws.cell(r, COL_RND).value)
         need_employees = needs(ws.cell(r, COL_EMPLOYEES).value)
 
-        if not (need_revenue or need_tangible or need_employees):
+        if not (need_revenue or need_tangible or need_rnd or need_employees):
             continue
 
         try:
@@ -110,6 +115,12 @@ def main():
                 row_filled += 1
             if need_tangible and tangible is not None:
                 ws.cell(r, COL_TANGIBLE).value = tangible
+                row_filled += 1
+
+        if need_rnd:
+            rnd = fetch_rnd_expense(corp_code, year, name=name)
+            if rnd is not None:
+                ws.cell(r, COL_RND).value = rnd
                 row_filled += 1
 
         if need_employees:
