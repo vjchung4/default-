@@ -16,6 +16,7 @@ debug_raw/ 폴더에 JSON으로 저장한다. 수치가 이상하게 나올 때 
 검증이 끝나서 파일로 저장하고 싶으면 DART_SAVE_FILES=1 을 설정한다.
 """
 
+import html
 import io
 import os
 import re
@@ -86,8 +87,6 @@ def load_corp_code_xml():
 
 def find_corp_code(xml_text, corp_name):
     """상장사(stock_code가 공백이 아닌 것) 중 이름이 정확히 일치하는 회사의 고유번호를 찾는다."""
-    import html
-
     for block in re.findall(r"<list>(.*?)</list>", xml_text, re.S):
         # XML에서는 "&"가 "&amp;"로 이스케이프되어 있으므로 비교 전에 풀어준다
         # (예: "동원F&B", "F&F"처럼 이름에 &가 들어간 회사).
@@ -179,24 +178,32 @@ def find_business_report_rcept_no(corp_code, year, name=None):
     return pool[0]["rcept_no"]
 
 
+def decode_bytes(raw):
+    for encoding in ("utf-8", "cp949"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="ignore")
+
+
 def fetch_report_document_text(rcept_no, name=None, year=None):
-    """사업보고서 원본 문서(document.xml, zip)를 받아 태그를 제거한 순수 텍스트로 반환한다."""
+    """사업보고서 원본 문서(document.xml, zip)를 받아 태그를 제거한 순수 텍스트로 반환한다.
+
+    zip 안에 여러 파일(본문, 첨부 등)이 들어있는 경우가 있어 전부 읽어서
+    이어 붙인다 — 첫 번째 파일만 읽으면 원하는 내용이 다른 파일에 들어있을 때
+    놓치게 된다.
+    """
     params = {"crtfc_key": API_KEY, "rcept_no": rcept_no}
     resp = requests.get(f"{BASE_URL}/document.xml", params=params, timeout=60)
     resp.raise_for_status()
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-        raw = zf.read(zf.namelist()[0])
-    for encoding in ("utf-8", "cp949"):
-        try:
-            text = raw.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-    else:
-        text = raw.decode("utf-8", errors="ignore")
+        text = "\n".join(decode_bytes(zf.read(name_)) for name_ in zf.namelist())
+
     text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"&nbsp;?", " ", text)
+    text = html.unescape(text)
     text = re.sub(r"[ \t]+", " ", text)
+
     if DEBUG_DUMP and name and year:
         os.makedirs(DEBUG_DIR, exist_ok=True)
         idx = text.find("연구개발비용")
