@@ -217,6 +217,7 @@ def fetch_rnd_expense(corp_code, year, name=None):
     try:
         rcept_no = find_business_report_rcept_no(corp_code, year, name=name)
         if not rcept_no:
+            print(f"  [연구개발비: 사업보고서 못 찾음] {name} {year}")
             return None
         text = fetch_report_document_text(rcept_no, name=name, year=year)
     except Exception as e:
@@ -229,25 +230,29 @@ def fetch_rnd_expense(corp_code, year, name=None):
     # 어느 위치에 있든 이 방식이면 잡힌다.
     row_match = re.search(r"연구개발비용?\s*계([^가-힣]{0,200})", text)
     if not row_match:
+        print(f"  [연구개발비: '연구개발비용 계' 행 못 찾음] {name} {year} (rcept_no={rcept_no})")
         return None
 
     numbers = re.findall(r"-?[0-9][0-9,]*(?:\.[0-9]+)?", row_match.group(1))
     if not numbers:
+        print(f"  [연구개발비: 숫자 못 찾음] {name} {year}: raw={row_match.group(1)!r}")
         return None
 
     amount_str = numbers[0].replace(",", "")
     try:
         amount = float(amount_str) if "." in amount_str else int(amount_str)
     except ValueError:
+        print(f"  [연구개발비: 숫자 변환 실패] {name} {year}: {amount_str!r}")
         return None
 
-    unit_search_start = max(0, row_match.start() - 3000)
+    unit_search_start = max(0, row_match.start() - 6000)
     unit_window = text[unit_search_start:row_match.start()]
     unit_match = None
     for m in re.finditer(r"단위\s*[:：]\s*(백만원|천원|원)", unit_window):
         unit_match = m
     if unit_match is None:
         # 단위 표시를 못 찾으면 잘못 스케일링할 위험이 있으므로 채우지 않는다.
+        print(f"  [연구개발비: 단위(백만원/천원/원) 표시 못 찾음] {name} {year}: 금액={numbers[0]}")
         return None
 
     scale = {"원": 1, "천원": 1_000, "백만원": 1_000_000}[unit_match.group(1)]
