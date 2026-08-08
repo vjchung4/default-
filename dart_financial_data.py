@@ -299,6 +299,8 @@ def main():
         for year in YEARS:
             revenue, tangible_assets, fs_div = fetch_financials(corp_code, year, name=name)
             time.sleep(0.2)
+            rnd = fetch_rnd_expense(corp_code, year, name=name)
+            time.sleep(0.2)
             employees = fetch_employee_count(corp_code, year, name=name)
             time.sleep(0.2)
             rows.append(
@@ -307,6 +309,7 @@ def main():
                     "연도": year,
                     "매출액": revenue,
                     "유형자산": tangible_assets,
+                    "연구개발비": rnd,
                     "직원수": employees,
                     "재무제표기준": fs_div,
                 }
@@ -322,7 +325,7 @@ def main():
     wb = Workbook()
     ws = wb.active
     ws.title = "DART재무데이터"
-    headers = ["회사", "연도", "매출액", "유형자산", "직원수", "재무제표기준(연결/개별)"]
+    headers = ["회사", "연도", "매출액", "유형자산", "연구개발비", "직원수", "재무제표기준(연결/개별)"]
     ws.append(headers)
     for row in rows:
         ws.append(
@@ -331,6 +334,7 @@ def main():
                 row["연도"],
                 row["매출액"],
                 row["유형자산"],
+                row["연구개발비"],
                 row["직원수"],
                 row["재무제표기준"],
             ]
