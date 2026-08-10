@@ -54,6 +54,84 @@ COMPANIES = [
     "한화에어로스페이스",
     "두산퓨얼셀",
     "안랩",
+    # 반도체·디스플레이
+    "하나마이크론",
+    "리벨리온",
+    "LX세미콘",
+    "솔브레인",
+    "동진쎄미켐",
+    "HPSP",
+    # 이차전지
+    "성일하이텍",
+    "새빗켐",
+    "금양",
+    # 첨단 모빌리티
+    "기아",
+    "현대모비스",
+    "현대오토에버",
+    "넥스트칩",
+    "퓨런티어",
+    "한화시스템",
+    # 차세대 원자력
+    "한전기술",
+    "한전KPS",
+    "우진",
+    "비에이치아이",
+    "현대건설",
+    # 첨단바이오
+    "SK바이오사이언스",
+    "알테오젠",
+    "한미약품",
+    "루닛",
+    "뷰노",
+    "올릭스",
+    # 우주항공·해양
+    "한국항공우주산업",  # KAI
+    "켄코아에어로스페이스",
+    "세트렉아이",
+    "제노코",
+    "HD한국조선해양",
+    # 수소
+    "범한퓨얼셀",
+    "상아프론테크",
+    "일진하이솔루스",
+    "효성첨단소재",
+    # 사이버보안
+    "파수",
+    "윈스",
+    "이글루",
+    "샌즈랩",
+    "지니언스",
+    "모니터랩",
+    # 인공지능
+    "NAVER",
+    "카카오",
+    "마음AI",
+    "솔트룩스",
+    "코난테크놀로지",
+    "플리토",
+    "브리지텍",
+    # 차세대 통신
+    "케이엠더블유",  # KMW
+    "에이스테크",
+    "서진시스템",
+    "오이솔루션",
+    "쏠리드",
+    "센서뷰",
+    # 첨단로봇·제조
+    "두산로보틱스",
+    "레인보우로보틱스",
+    "뉴로메카",
+    "에스비비테크",
+    "에스피지",  # SPG
+    "로보티즈",
+    # 양자
+    "SK텔레콤",
+    "KT",
+    "우리넷",
+    "엑스게이트",
+    "케이씨에스",
+    "아이윈플러스",
 ]
 YEARS = list(range(2018, 2026))
 REPORT_CODE = "11011"  # 사업보고서(연간)
@@ -302,11 +380,19 @@ def fetch_employee_count(corp_code, year, name=None):
 
 def main():
     xml_text = load_corp_code_xml()
-    corp_codes = {name: find_corp_code(xml_text, name) for name in COMPANIES}
+
+    corp_codes = {}
+    for name in COMPANIES:
+        try:
+            corp_codes[name] = find_corp_code(xml_text, name)
+        except ValueError as e:
+            print(f"[건너뜀] {e}")
     print("고유번호:", corp_codes)
 
     rows = []
     for name in COMPANIES:
+        if name not in corp_codes:
+            continue
         corp_code = corp_codes[name]
         for year in YEARS:
             revenue, tangible_assets, fs_div = fetch_financials(corp_code, year, name=name)
